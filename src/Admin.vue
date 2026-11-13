@@ -1,4 +1,5 @@
 <script setup>
+import { compactCode } from './invitation.js'
 import { computed, onMounted, ref } from 'vue'
 import { request, requestKey } from './api.js'
 import { readSession, writeSession } from './session.js'
@@ -118,7 +119,7 @@ function selectStatus(event) {
 function registrationLink(code) {
   const link = new URL(location.href)
   link.search = ''
-  link.hash = new URLSearchParams({ invite: code }).toString()
+  link.hash = compactCode(code)
   return link.href
 }
 

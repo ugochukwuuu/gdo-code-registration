@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import Admin from './Admin.vue'
+import { expandCode, normaliseCode } from './invitation.js'
 import { configured, request, requestKey } from './api.js'
 import { readSession, writeSession } from './session.js'
 import { renderTicket } from './ticket.js'
@@ -31,16 +32,14 @@ const ticketUrl = ref('')
 const heading = ref(null)
 const progress = computed(() => step.value === 'ticket' ? 2 : 1)
 
-function normaliseCode(value) {
-  return value.trim().toUpperCase().replace(/[\s-]/g, '')
-}
-
 function takeLinkedCode() {
   const url = new URL(location.href)
-  const fragment = new URLSearchParams(url.hash.slice(1))
-  const hasInvite = fragment.has('invite') || fragment.has('code')
+  const hash = url.hash.slice(1)
+  const compactInvite = expandCode(hash)
+  const fragment = new URLSearchParams(hash)
+  const hasInvite = compactInvite !== null || fragment.has('invite') || fragment.has('code')
   if (!hasInvite && !url.searchParams.has('code')) return ''
-  const incoming = fragment.get('invite') ?? fragment.get('code') ?? url.searchParams.get('code')
+  const incoming = compactInvite ?? fragment.get('invite') ?? fragment.get('code') ?? url.searchParams.get('code')
   url.searchParams.delete('code')
   if (hasInvite) url.hash = ''
   history.replaceState(history.state, '', url)
