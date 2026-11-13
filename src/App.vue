@@ -18,9 +18,9 @@ const pending = ref(restored?.pending || null)
 const ticket = ref(restored?.ticket || null)
 const step = ref(ticket.value ? 'ticket' : pending.value ? 'pending' : 'link')
 const fullName = ref(pending.value?.fullName || '')
-const phone = ref(pending.value?.phone || '')
-const email = ref(pending.value?.email || '')
-const parentAddress = ref(pending.value?.parentAddress || '')
+const parentName = ref(pending.value?.parentName || '')
+const parentPhone = ref(pending.value?.parentPhone || '')
+const parentEmail = ref(pending.value?.parentEmail || '')
 const busy = ref(false)
 const error = ref('')
 const linkRejected = ref(false)
@@ -63,7 +63,7 @@ function updateRoute() {
     if (ticketUrl.value) URL.revokeObjectURL(ticketUrl.value)
     ticketUrl.value = renderError.value = ''
     pending.value = ticket.value = null
-    fullName.value = phone.value = email.value = parentAddress.value = ''
+    fullName.value = parentName.value = parentPhone.value = parentEmail.value = ''
     code.value = incoming
     saveCustomer()
     switchStep('link')
@@ -102,28 +102,28 @@ function prepareRegistration() {
   if (busy.value) return
   error.value = ''
   const name = fullName.value.trim().replace(/\s+/g, ' ')
-  const digits = phone.value.trim().replace(/[\s().-]/g, '')
-  const emailAddress = email.value.trim()
-  const homeAddress = parentAddress.value.trim()
+  const digits = parentPhone.value.trim().replace(/[\s().-]/g, '')
+  const emailAddress = parentEmail.value.trim()
+  const contactName = parentName.value.trim().replace(/\s+/g, ' ')
   if (!/\p{L}/u.test(name) || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) {
-    error.value = 'Enter a full name of up to 100 characters.'
+    error.value = 'Enter the child’s name using up to 100 characters.'
     return
   }
-  if (phone.value.trim().length > 40 || !/^\+?\d{7,15}$/.test(digits)) {
-    error.value = 'Enter a phone number with 7 to 15 digits.'
+  if (!/\p{L}/u.test(contactName) || contactName.length > 100 || /[\u0000-\u001f\u007f]/.test(contactName)) {
+    error.value = 'Enter the parent’s name using up to 100 characters.'
     return
   }
-  if (emailAddress && (emailAddress.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress))) {
-    error.value = 'Enter a valid email address or leave it blank.'
+  if (parentPhone.value.trim().length > 40 || !/^\+?\d{7,15}$/.test(digits)) {
+    error.value = 'Enter the parent’s phone number with 7 to 15 digits.'
     return
   }
-  if (!homeAddress || homeAddress.length > 250 || /[\u0000-\u001f\u007f]/.test(homeAddress)) {
-    error.value = 'Enter the parent’s address using up to 250 characters.'
+  if (emailAddress.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)) {
+    error.value = 'Enter a valid parent’s email address.'
     return
   }
   pending.value = {
-    code: code.value, fullName: name, phone: digits, email: emailAddress,
-    parentAddress: homeAddress, requestKey: requestKey(),
+    code: code.value, fullName: name, parentName: contactName, parentPhone: digits,
+    parentEmail: emailAddress, requestKey: requestKey(),
   }
   saveCustomer()
   redeem()
@@ -134,15 +134,15 @@ async function redeem() {
   error.value = ''
   busy.value = true
   try {
-    const action = pending.value.parentAddress ? 'redeemWithAddress' : 'redeem'
+    const action = pending.value.parentName ? 'redeemWithParent' : pending.value.parentAddress ? 'redeemWithAddress' : 'redeem'
     ticket.value = await request(action, pending.value)
     pending.value = null
-    fullName.value = phone.value = email.value = parentAddress.value = ''
+    fullName.value = parentName.value = parentPhone.value = parentEmail.value = ''
     saveCustomer()
     switchStep('ticket')
     makeTicket()
   } catch (failure) {
-    if (['INVALID_CODE', 'CODE_USED', 'INVALID_NAME', 'INVALID_PHONE', 'INVALID_EMAIL', 'INVALID_ADDRESS', 'BAD_REQUEST', 'NOT_CONFIGURED'].includes(failure.code)) {
+    if (['INVALID_CODE', 'CODE_USED', 'INVALID_NAME', 'INVALID_PARENT_NAME', 'INVALID_PHONE', 'INVALID_EMAIL', 'INVALID_ADDRESS', 'BAD_REQUEST', 'NOT_CONFIGURED'].includes(failure.code)) {
       pending.value = null
       linkRejected.value = ['INVALID_CODE', 'CODE_USED'].includes(failure.code)
       saveCustomer()
@@ -212,9 +212,8 @@ onUnmounted(() => {
 
         <template v-if="step === 'link'">
           <h1 ref="heading" tabindex="-1">Register for Girls Day Out 3.0</h1>
-          <p v-if="!code" class="intro">Open the registration link the organiser sent you on WhatsApp.</p>
-          <p v-else-if="busy || !error" class="intro" role="status">Checking your registration link…</p>
-          <div v-else class="form-stack">
+          <p v-if="code && (busy || !error)" class="intro" role="status">Checking your registration link…</p>
+          <div v-else-if="code" class="form-stack">
             <p class="form-error" role="alert">{{ error }}</p>
             <p v-if="linkRejected" class="muted">Contact the organiser if you need help with your ticket.</p>
             <button v-else-if="configured" class="secondary-button" @click="verify">Retry link</button>
@@ -223,13 +222,13 @@ onUnmounted(() => {
 
         <template v-else-if="step === 'form'">
           <h1 ref="heading" tabindex="-1">Your details</h1>
-          <p class="intro">Enter your name as you’d like it to appear on your ticket.</p>
+          <p class="intro">Enter the child’s name as it should appear on the ticket.</p>
           <form class="form-stack" @submit.prevent="prepareRegistration">
             <fieldset :disabled="busy" class="fields">
-              <div><label for="full-name">Full name</label><input id="full-name" v-model="fullName" required maxlength="100" autocomplete="name" /></div>
-              <div><label for="phone">Phone number</label><input id="phone" v-model="phone" required maxlength="40" type="tel" autocomplete="tel" /></div>
-              <div><label for="parent-address">Parent’s address</label><input id="parent-address" v-model="parentAddress" required maxlength="250" autocomplete="street-address" /></div>
-              <div><label for="email">Email address <span class="optional">(optional)</span></label><input id="email" v-model="email" maxlength="254" type="email" autocomplete="email" /></div>
+              <div><label for="full-name">Child’s name</label><input id="full-name" v-model="fullName" required maxlength="100" autocomplete="section-child name" /></div>
+              <div><label for="parent-name">Parent’s name</label><input id="parent-name" v-model="parentName" required maxlength="100" autocomplete="section-parent name" /></div>
+              <div><label for="parent-phone">Parent’s phone number</label><input id="parent-phone" v-model="parentPhone" required maxlength="40" type="tel" autocomplete="section-parent tel" /></div>
+              <div><label for="parent-email">Parent’s email address</label><input id="parent-email" v-model="parentEmail" required maxlength="254" type="email" autocomplete="section-parent email" /></div>
             </fieldset>
             <p v-if="error" class="form-error" role="alert">{{ error }}</p>
             <button class="primary-button" :disabled="busy">{{ busy ? 'Registering…' : 'Complete registration' }} <span aria-hidden="true">→</span></button>
@@ -261,7 +260,7 @@ onUnmounted(() => {
           </template>
         </template>
       </div>
-      <footer class="registration-footer"><span>Girls Day Out 3.0</span><a href="#admin">Organiser sign-in</a></footer>
+      <footer class="registration-footer"><span>Girls Day Out 3.0</span></footer>
     </section>
   </main>
 </template>

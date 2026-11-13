@@ -222,11 +222,11 @@ onMounted(() => {
             </tbody>
           </table>
           <table v-else>
-            <thead><tr><th>Full name</th><th>Ticket number</th><th>Phone</th><th>Email</th><th>Parent’s address</th><th>Registered</th></tr></thead>
+            <thead><tr><th>Child’s name</th><th>Ticket number</th><th>Parent’s name</th><th>Parent’s phone number</th><th>Parent’s email address</th><th>Registered</th></tr></thead>
             <tbody>
               <tr v-for="item in dashboard.items" :key="item.ticketNumber">
-                <td>{{ item.fullName }}</td><td><code>{{ item.ticketNumber }}</code></td><td>{{ item.phone }}</td>
-                <td>{{ item.email || '—' }}</td><td class="attendee-address">{{ item.parentAddress || '—' }}</td><td>{{ displayDate(item.registeredAt) }}</td>
+                <td>{{ item.fullName }}</td><td><code>{{ item.ticketNumber }}</code></td><td>{{ item.parentName || '—' }}</td>
+                <td>{{ item.parentPhone || '—' }}</td><td>{{ item.parentEmail || '—' }}</td><td>{{ displayDate(item.registeredAt) }}</td>
               </tr>
             </tbody>
           </table>

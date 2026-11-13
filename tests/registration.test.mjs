@@ -84,7 +84,7 @@ test('failed atomic update leaves the code usable and a lost response can be ret
 
   // An attendee who registered before the new column can still recover their ticket.
   const legacy = api.state()
-  legacy.Registrations[1].pop()
+  legacy.Registrations[1].length = 7
   api.save(legacy)
   assert.deepEqual(api.call('redeem', { ...payload, parentAddress: undefined }).data,
     { fullName: payload.fullName, ticketNumber: 'GDO-000001' })
@@ -110,4 +110,24 @@ test('simultaneous repeats of the same submission return one ticket and create o
   assert.deepEqual(first, second)
   assert.equal(first.data.ticketNumber, 'GDO-000001')
   assert.equal(api.state().Registrations.length, 2)
+})
+
+test('registration stores the child’s ticket name separately from the required parent details', () => {
+  const { api, token, codes: [code] } = fixture()
+  const details = { code, requestKey: key(), fullName: 'Ada Okafor', parentName: 'Ife Okafor',
+    parentPhone: '0803 123 4567', parentEmail: 'parent@example.test' }
+  assert.equal(api.call('redeemWithParent', { ...details, parentName: '' }).error.code, 'INVALID_PARENT_NAME')
+  assert.equal(api.call('redeemWithParent', { ...details, parentPhone: '' }).error.code, 'INVALID_PHONE')
+  assert.equal(api.call('redeemWithParent', { ...details, parentEmail: '' }).error.code, 'INVALID_EMAIL')
+  assert.equal(api.state().RegistrationCodes[1][1], 'Unused')
+  api.failNextWrite('after')
+  assert.equal(api.call('redeemWithParent', details).error.code, 'TEMPORARY_ERROR')
+  assert.deepEqual(api.call('redeemWithParent', details).data, { fullName: 'Ada Okafor', ticketNumber: 'GDO-000001' })
+  assert.equal(api.call('redeemWithParent', { ...details, parentEmail: 'other@example.test' }).error.code, 'CODE_USED')
+  const [, row] = api.state().Registrations
+  assert.deepEqual(row.slice(7), ['', 'Ife Okafor', '08031234567', 'parent@example.test'])
+  const [item] = api.call('adminList', { token, tab: 'attendees' }).data.items
+  assert.equal(item.parentName, details.parentName)
+  assert.equal(item.parentPhone, '08031234567')
+  assert.equal(item.parentEmail, details.parentEmail)
 })

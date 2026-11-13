@@ -1,6 +1,7 @@
 const CODE_HEADERS = ['Code', 'Status', 'CreatedAt', 'RedeemedAt', 'RegistrationID'];
 const REGISTRATION_HEADERS = [
   'RegistrationID', 'FullName', 'Phone', 'Email', 'RegistrationCode', 'TicketNumber', 'RegisteredAt', 'ParentAddress',
+  'ParentName', 'ParentPhone', 'ParentEmail',
 ];
 const SESSION_SECONDS = 3600;
 const PAGE_SIZE = 50;
@@ -41,7 +42,7 @@ function dispatch_(body) {
     case 'health':
       withLock_(() => limit_('public', 75, 60));
       readTables_(settings_());
-      return { service: 'gdo-code-registration', version: 2 };
+      return { service: 'gdo-code-registration', version: 3 };
     case 'verify': {
       const code = parseCode_(body.code);
       withLock_(() => limit_('public', 75, 60));
@@ -52,7 +53,8 @@ function dispatch_(body) {
       return { code };
     }
     case 'redeem':
-    case 'redeemWithAddress': {
+    case 'redeemWithAddress':
+    case 'redeemWithParent': {
       const details = parseRegistration_(body);
       return withLock_(() => {
         limit_('public', 75, 60);
@@ -96,14 +98,15 @@ function redeem_(settings, details) {
   if (codeRow[1] === 'Used' || previous) {
     if (codeRow[1] === 'Used' && codeRow[4] === registrationId && previous &&
         previous[0] === registrationId && previous[1] === details.fullName &&
-        previous[2] === details.phone && (previous[3] || '') === details.email &&
-        (previous[7] || '') === details.parentAddress) {
+        (previous[2] || '') === details.phone && (previous[3] || '') === details.email &&
+        (previous[7] || '') === details.parentAddress && (previous[8] || '') === details.parentName &&
+        (previous[9] || '') === details.parentPhone && (previous[10] || '') === details.parentEmail) {
       return ticket_(previous);
     }
     fail_('CODE_USED', 'This registration link has already been used.');
   }
   if (codeRow[1] !== 'Unused') throw new Error('Invalid code status.');
-  if (!details.parentAddress) fail_('INVALID_ADDRESS', 'Enter the parent’s address.');
+  if (!details.parentName && !details.parentAddress) fail_('INVALID_ADDRESS', 'Enter the parent’s address.');
 
   const highestNumber = registrations.reduce((highest, row) => {
     const match = /^GDO-(\d{6,})$/.exec(row[5] || '');
@@ -114,6 +117,7 @@ function redeem_(settings, details) {
   const now = new Date().toISOString();
   const registration = [
     registrationId, details.fullName, details.phone, details.email, details.code, ticketNumber, now, details.parentAddress,
+    details.parentName, details.parentPhone, details.parentEmail,
   ];
   const ids = sheetIds_(settings);
   Sheets.Spreadsheets.batchUpdate({
@@ -167,7 +171,7 @@ function dashboard_(settings, body) {
     page, pages,
     items: attendees ? items.map(row => ({
       fullName: row[1], phone: row[2], email: row[3] || '', code: row[4], ticketNumber: row[5], registeredAt: row[6],
-      parentAddress: row[7] || '',
+      parentAddress: row[7] || '', parentName: row[8] || '', parentPhone: row[9] || '', parentEmail: row[10] || '',
     })) : items.map(row => ({ code: row[0], status: row[1], createdAt: row[2], redeemedAt: row[3] || '' })),
   };
 }
@@ -227,7 +231,7 @@ function settings_() {
 }
 
 function readTables_(settings, includeRegistrations = true) {
-  const ranges = includeRegistrations ? ['RegistrationCodes!A:E', 'Registrations!A:H'] : ['RegistrationCodes!A:E'];
+  const ranges = includeRegistrations ? ['RegistrationCodes!A:E', 'Registrations!A:K'] : ['RegistrationCodes!A:E'];
   const { valueRanges } = Sheets.Spreadsheets.Values.batchGet(settings.spreadsheetId, {
     ranges, valueRenderOption: 'UNFORMATTED_VALUE',
   });
@@ -276,9 +280,11 @@ function setupSpreadsheet() {
         return;
       }
       const current = header.getValues()[0];
-      if (name === 'Registrations' && current[7] === '' &&
-          JSON.stringify(current.slice(0, 7)) === JSON.stringify(headers.slice(0, 7)) && sheet.getLastColumn() === 7) {
-        sheet.getRange(1, 8).setValue(headers[7]).setFontWeight('bold');
+      const previousWidth = sheet.getLastColumn();
+      if (name === 'Registrations' && [7, 8].includes(previousWidth) &&
+          JSON.stringify(current.slice(0, previousWidth)) === JSON.stringify(headers.slice(0, previousWidth))) {
+        const added = headers.slice(previousWidth);
+        sheet.getRange(1, previousWidth + 1, 1, added.length).setValues([added]).setFontWeight('bold');
       } else if (JSON.stringify(current) !== JSON.stringify(headers)) {
         throw new Error('Unexpected headers in ' + name + '. Setup did not overwrite existing data.');
       }
@@ -305,25 +311,35 @@ function parseRegistration_(body) {
   const code = parseCode_(body.code);
   const requestKey = parseKey_(body.requestKey);
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim().replace(/\s+/g, ' ') : '';
-  const rawPhone = typeof body.phone === 'string' ? body.phone.trim() : '';
+  const withParent = body.action === 'redeemWithParent';
+  const phoneField = withParent ? body.parentPhone : body.phone;
+  const emailField = withParent ? body.parentEmail : body.email;
+  const rawPhone = typeof phoneField === 'string' ? phoneField.trim() : '';
   const phone = rawPhone.replace(/[\s().-]/g, '');
-  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const email = typeof emailField === 'string' ? emailField.trim() : '';
+  const parentName = withParent && typeof body.parentName === 'string' ? body.parentName.trim().replace(/\s+/g, ' ') : '';
   const parentAddress = typeof body.parentAddress === 'string' ? body.parentAddress.trim() : '';
   if (fullName.length > 100 || !/\p{L}/u.test(fullName) || /[\u0000-\u001f\u007f]/.test(fullName)) {
     fail_('INVALID_NAME', 'Enter a full name of up to 100 characters.');
   }
+  if (withParent && (parentName.length > 100 || !/\p{L}/u.test(parentName) || /[\u0000-\u001f\u007f]/.test(parentName))) {
+    fail_('INVALID_PARENT_NAME', 'Enter the parent’s name using up to 100 characters.');
+  }
   if (rawPhone.length > 40 || !/^\+?\d{7,15}$/.test(phone)) {
     fail_('INVALID_PHONE', 'Enter a phone number with 7 to 15 digits.');
   }
-  if ((body.email != null && typeof body.email !== 'string') ||
+  if ((withParent && !email) || (emailField != null && typeof emailField !== 'string') ||
       (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))) {
-    fail_('INVALID_EMAIL', 'Enter a valid email address or leave it blank.');
+    fail_('INVALID_EMAIL', withParent ? 'Enter a valid parent’s email address.' : 'Enter a valid email address or leave it blank.');
   }
   if ((body.parentAddress != null && typeof body.parentAddress !== 'string') ||
       parentAddress.length > 250 || /[\u0000-\u001f\u007f]/.test(parentAddress)) {
     fail_('INVALID_ADDRESS', 'Enter a parent’s address of up to 250 characters.');
   }
-  return { code, requestKey, fullName, phone, email, parentAddress };
+  if (withParent) {
+    return { code, requestKey, fullName, parentName, parentPhone: phone, parentEmail: email, phone: '', email: '', parentAddress: '' };
+  }
+  return { code, requestKey, fullName, phone, email, parentAddress, parentName: '', parentPhone: '', parentEmail: '' };
 }
 
 function ticket_(row) {
