@@ -65,6 +65,7 @@ function updateRoute() {
     ticketUrl.value = renderError.value = ''
     pending.value = ticket.value = null
     fullName.value = childAge.value = parentName.value = parentPhone.value = parentEmail.value = ''
+    touched.value = {}
     code.value = incoming
     saveCustomer()
     switchStep('link')
@@ -99,38 +100,38 @@ async function verify() {
   }
 }
 
+const touched = ref({})
+const details = computed(() => ({
+  fullName: fullName.value.trim().replace(/\s+/g, ' '),
+  childAge: String(childAge.value).trim(),
+  parentName: parentName.value.trim().replace(/\s+/g, ' '),
+  parentPhone: parentPhone.value.trim().replace(/[\s().-]/g, ''),
+  parentEmail: parentEmail.value.trim(),
+}))
+
+const fieldErrors = computed(() => {
+  const { fullName: name, childAge: age, parentName: contactName, parentPhone: digits, parentEmail: email } = details.value
+  const validName = name => /\p{L}/u.test(name) && name.length <= 100 && !/[\u0000-\u001f\u007f]/.test(name)
+  return {
+    fullName: validName(name) ? '' : 'Enter the child’s name using up to 100 characters.',
+    childAge: /^\d{1,3}$/.test(age) && Number(age) <= 120 ? '' : 'Enter an age from 0 to 120 in whole years.',
+    parentName: validName(contactName) ? '' : 'Enter the parent’s name using up to 100 characters.',
+    parentPhone: parentPhone.value.trim().length <= 40 && /^\+?\d{7,15}$/.test(digits) ? '' : 'Enter the parent’s phone number with 7 to 15 digits.',
+    parentEmail: email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Enter a valid email address for the parent.',
+  }
+})
+const canSubmit = computed(() => Object.values(fieldErrors.value).every(message => !message))
+
+function updateAge(event) {
+  const input = event.target
+  if (/^\d{0,3}$/.test(input.value)) childAge.value = input.value
+  else input.value = childAge.value
+}
+
 function prepareRegistration() {
-  if (busy.value) return
+  if (busy.value || !canSubmit.value) return
   error.value = ''
-  const name = fullName.value.trim().replace(/\s+/g, ' ')
-  const age = String(childAge.value).trim()
-  const digits = parentPhone.value.trim().replace(/[\s().-]/g, '')
-  const emailAddress = parentEmail.value.trim()
-  const contactName = parentName.value.trim().replace(/\s+/g, ' ')
-  if (!/\p{L}/u.test(name) || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) {
-    error.value = 'Enter the child’s name using up to 100 characters.'
-    return
-  }
-  if (!/^\d{1,3}$/.test(age) || Number(age) > 120) {
-    error.value = 'Enter the child’s age in whole years (0 to 120).'
-    return
-  }
-  if (!/\p{L}/u.test(contactName) || contactName.length > 100 || /[\u0000-\u001f\u007f]/.test(contactName)) {
-    error.value = 'Enter the parent’s name using up to 100 characters.'
-    return
-  }
-  if (parentPhone.value.trim().length > 40 || !/^\+?\d{7,15}$/.test(digits)) {
-    error.value = 'Enter the parent’s phone number with 7 to 15 digits.'
-    return
-  }
-  if (emailAddress.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)) {
-    error.value = 'Enter a valid email address for the parent.'
-    return
-  }
-  pending.value = {
-    code: code.value, fullName: name, childAge: age, parentName: contactName, parentPhone: digits,
-    parentEmail: emailAddress, requestKey: requestKey(),
-  }
+  pending.value = { code: code.value, ...details.value, requestKey: requestKey() }
   saveCustomer()
   redeem()
 }
@@ -228,17 +229,37 @@ onUnmounted(() => {
 
         <template v-else-if="step === 'form'">
           <h1 ref="heading" tabindex="-1">Your details</h1>
-          <p class="intro">Enter the child’s name as it should appear on the ticket.</p>
+          <p class="intro">Enter the child’s name as it should appear on the ticket. All fields are required.</p>
           <form class="form-stack" @submit.prevent="prepareRegistration">
             <fieldset :disabled="busy" class="fields">
-              <div><label for="full-name">Child’s name</label><input id="full-name" v-model="fullName" required maxlength="100" autocomplete="section-child name" /></div>
-              <div><label for="child-age">Age</label><input id="child-age" v-model="childAge" required type="text" inputmode="numeric" maxlength="3" /></div>
-              <div><label for="parent-name">Parent’s name</label><input id="parent-name" v-model="parentName" required maxlength="100" autocomplete="section-parent name" /></div>
-              <div><label for="parent-phone">Parent’s phone number</label><input id="parent-phone" v-model="parentPhone" required maxlength="40" type="tel" autocomplete="section-parent tel" /></div>
-              <div><label for="parent-email">Parent’s email</label><input id="parent-email" v-model="parentEmail" required maxlength="254" type="email" autocomplete="section-parent email" /></div>
+              <div><label for="full-name">Child’s name</label><input id="full-name" v-model="fullName" required maxlength="100" autocomplete="section-child name"
+                @blur="touched.fullName = true" :aria-invalid="Boolean(touched.fullName && fieldErrors.fullName)"
+                :aria-describedby="touched.fullName && fieldErrors.fullName ? 'full-name-error' : undefined" />
+                <p v-if="touched.fullName && fieldErrors.fullName" id="full-name-error" class="field-error" role="status">{{ fieldErrors.fullName }}</p>
+              </div>
+              <div><label for="child-age">Age</label><input id="child-age" :value="childAge" @input="updateAge" required type="text" inputmode="numeric" pattern="[0-9]{1,3}"
+                @blur="touched.childAge = true" :aria-invalid="Boolean(touched.childAge && fieldErrors.childAge)"
+                :aria-describedby="touched.childAge && fieldErrors.childAge ? 'child-age-error' : undefined" />
+                <p v-if="touched.childAge && fieldErrors.childAge" id="child-age-error" class="field-error" role="status">{{ fieldErrors.childAge }}</p>
+              </div>
+              <div><label for="parent-name">Parent’s name</label><input id="parent-name" v-model="parentName" required maxlength="100" autocomplete="section-parent name"
+                @blur="touched.parentName = true" :aria-invalid="Boolean(touched.parentName && fieldErrors.parentName)"
+                :aria-describedby="touched.parentName && fieldErrors.parentName ? 'parent-name-error' : undefined" />
+                <p v-if="touched.parentName && fieldErrors.parentName" id="parent-name-error" class="field-error" role="status">{{ fieldErrors.parentName }}</p>
+              </div>
+              <div><label for="parent-phone">Parent’s phone number</label><input id="parent-phone" v-model="parentPhone" required maxlength="40" type="tel" autocomplete="section-parent tel"
+                @blur="touched.parentPhone = true" :aria-invalid="Boolean(touched.parentPhone && fieldErrors.parentPhone)"
+                :aria-describedby="touched.parentPhone && fieldErrors.parentPhone ? 'parent-phone-error' : undefined" />
+                <p v-if="touched.parentPhone && fieldErrors.parentPhone" id="parent-phone-error" class="field-error" role="status">{{ fieldErrors.parentPhone }}</p>
+              </div>
+              <div><label for="parent-email">Parent’s email</label><input id="parent-email" v-model="parentEmail" required maxlength="254" type="email" autocomplete="section-parent email"
+                @blur="touched.parentEmail = true" :aria-invalid="Boolean(touched.parentEmail && fieldErrors.parentEmail)"
+                :aria-describedby="touched.parentEmail && fieldErrors.parentEmail ? 'parent-email-error' : undefined" />
+                <p v-if="touched.parentEmail && fieldErrors.parentEmail" id="parent-email-error" class="field-error" role="status">{{ fieldErrors.parentEmail }}</p>
+              </div>
             </fieldset>
             <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-            <button class="primary-button" :disabled="busy">{{ busy ? 'Registering…' : 'Complete registration' }} <span aria-hidden="true">→</span></button>
+            <button type="submit" class="primary-button" :disabled="busy || !canSubmit">{{ busy ? 'Registering…' : 'Complete registration' }} <span aria-hidden="true">→</span></button>
           </form>
         </template>
 

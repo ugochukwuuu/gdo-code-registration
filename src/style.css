@@ -55,6 +55,8 @@ h2 { margin: 0; font-size: 1.55rem; letter-spacing: -.025em; }
 .form-stack { @apply grid; gap: .7rem; margin-top: 1.4rem; }
 .fields { @apply grid gap-3; padding: 0; border: 0; min-width: 0; }
 .fields > div { @apply grid gap-1.5; }
+.field-error { color: #8d2742; font-size: .87rem; margin: 0; }
+.fields input[aria-invalid="true"] { border-color: #8d2742; }
 label { font-weight: 650; font-size: .9rem; }
 .optional { color: var(--muted); font-weight: 400; }
 input, select {
@@ -67,6 +69,7 @@ input::placeholder { color: #776583; font-size: .86rem; }
   min-height: 2.8rem; padding: .63rem 1.05rem; border-radius: .55rem; font-weight: 700; text-decoration: none; cursor: pointer;
 }
 .primary-button { background: var(--purple); border: 1px solid var(--purple); color: white; }
+.primary-button:disabled { opacity: .55; cursor: not-allowed; }
 .primary-button:hover:not(:disabled) { background: #402055; }
 .primary-button span { font-size: 1.15rem; }
 .secondary-button { background: #f4eaf8; border: 1px solid #e7d8ed; color: #502666; }
