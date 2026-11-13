@@ -1,0 +1,15 @@
+{
+  "template": "ticket-template.jpg",
+  "fontFiles": [],
+  "name": {
+    "x": 198, "y": 274, "width": 315, "height": 38,
+    "clear": { "x": 300, "y": 283, "width": 113, "height": 24, "sampleX": 275, "sampleY": 293 },
+    "fontFamily": "'Times New Roman', Times, serif", "fontSize": 20,
+    "fontWeight": 700, "color": "#080808", "align": "center", "uppercase": true
+  },
+  "number": {
+    "x": 968, "y": 106, "width": 18, "height": 124, "rotate": 90,
+    "fontFamily": "'Times New Roman', Times, serif", "fontSize": 14,
+    "color": "#080808", "align": "left"
+  }
+}
