@@ -50,7 +50,7 @@ try {
   if (shouldWrite) assert.ok(password, 'Set GDO_SMOKE_ADMIN_PASSWORD privately for the test deployment')
   const health = success(await call('health'), 'Health check')
   assert.equal(health.service, 'gdo-code-registration')
-  assert.equal(health.version, 3, 'Deploy the version that supports parent contact details before connecting the updated frontend')
+  assert.equal(health.version, 5, 'Deploy the version that supports child age before connecting the updated frontend')
   console.log(origin ? 'Live redirect, CORS headers and Sheets connectivity passed.' : 'Live redirect and Sheets connectivity passed.')
 
   if (shouldWrite) {
@@ -61,7 +61,7 @@ try {
       assert.deepEqual(success(await call('adminGenerate', batch), 'Batch replay').codes, [code, secondCode])
       success(await call('verify', { code }), 'Code verification')
       const entrants = ['Deployment Test One', 'Deployment Test Two'].map(fullName => ({
-        code, requestKey: key(), fullName, parentName: 'Deployment Test Parent', parentPhone: '08000000000', parentEmail: 'parent@example.test',
+        code, requestKey: key(), fullName, childAge: '10', parentName: 'Deployment Test Parent', parentPhone: '08000000000', parentEmail: 'parent@example.test',
       }))
       const results = await Promise.all(entrants.map(details => call('redeemWithAddress', details)))
       assert.equal(results.filter(result => result.ok).length, 1, 'Exactly one submission should succeed')

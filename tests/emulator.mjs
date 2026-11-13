@@ -5,7 +5,7 @@ import { parentPort, workerData } from 'node:worker_threads'
 
 const backend = readFileSync(new URL('../backend/Code.gs', import.meta.url), 'utf8')
 const codeHeaders = ['Code', 'Status', 'CreatedAt', 'RedeemedAt', 'RegistrationID']
-const registrationHeaders = ['RegistrationID', 'FullName', 'Phone', 'Email', 'RegistrationCode', 'TicketNumber', 'RegisteredAt', 'ParentAddress', 'ParentName', 'ParentPhone', 'ParentEmail']
+const registrationHeaders = ['RegistrationID', 'FullName', 'Phone', 'Email', 'RegistrationCode', 'TicketNumber', 'RegisteredAt', 'ParentAddress', 'ParentName', 'ParentPhone', 'ParentEmail', 'ChildAge']
 const sheetNames = { 0: 'RegistrationCodes', 1: 'Registrations' }
 const password = 'local-test-password'
 const digest = value => createHash('sha256').update(value).digest()

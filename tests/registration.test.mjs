@@ -114,8 +114,11 @@ test('simultaneous repeats of the same submission return one ticket and create o
 
 test('registration stores the child’s ticket name separately from the required parent details', () => {
   const { api, token, codes: [code] } = fixture()
-  const details = { code, requestKey: key(), fullName: 'Ada Okafor', parentName: 'Ife Okafor',
+  const details = { code, requestKey: key(), fullName: 'Ada Okafor', childAge: '0', parentName: 'Ife Okafor',
     parentPhone: '0803 123 4567', parentEmail: 'parent@example.test' }
+  for (const childAge of [undefined, '-1', '10.5', '121']) {
+    assert.equal(api.call('redeemWithParent', { ...details, childAge }).error.code, 'INVALID_CHILD_AGE')
+  }
   assert.equal(api.call('redeemWithParent', { ...details, parentName: '' }).error.code, 'INVALID_PARENT_NAME')
   assert.equal(api.call('redeemWithParent', { ...details, parentPhone: '' }).error.code, 'INVALID_PHONE')
   assert.equal(api.call('redeemWithParent', { ...details, parentEmail: '' }).error.code, 'INVALID_EMAIL')
@@ -123,11 +126,19 @@ test('registration stores the child’s ticket name separately from the required
   api.failNextWrite('after')
   assert.equal(api.call('redeemWithParent', details).error.code, 'TEMPORARY_ERROR')
   assert.deepEqual(api.call('redeemWithParent', details).data, { fullName: 'Ada Okafor', ticketNumber: 'GDO-000001' })
-  assert.equal(api.call('redeemWithParent', { ...details, parentEmail: 'other@example.test' }).error.code, 'CODE_USED')
+  assert.equal(api.call('redeemWithParent', { ...details, childAge: '1' }).error.code, 'CODE_USED')
   const [, row] = api.state().Registrations
-  assert.deepEqual(row.slice(7), ['', 'Ife Okafor', '08031234567', 'parent@example.test'])
+  assert.deepEqual(row.slice(7), ['', 'Ife Okafor', '08031234567', 'parent@example.test', '0'])
   const [item] = api.call('adminList', { token, tab: 'attendees' }).data.items
   assert.equal(item.parentName, details.parentName)
   assert.equal(item.parentPhone, '08031234567')
   assert.equal(item.parentEmail, details.parentEmail)
+  assert.equal(item.childAge, '0')
+
+  const legacy = api.state()
+  legacy.Registrations[1].pop()
+  legacy.Registrations[1][10] = 'legacy@example.test'
+  api.save(legacy)
+  assert.deepEqual(api.call('redeemWithParent', { ...details, childAge: undefined, parentEmail: 'legacy@example.test' }).data,
+    { fullName: details.fullName, ticketNumber: 'GDO-000001' })
 })

@@ -18,6 +18,7 @@ const pending = ref(restored?.pending || null)
 const ticket = ref(restored?.ticket || null)
 const step = ref(ticket.value ? 'ticket' : pending.value ? 'pending' : 'link')
 const fullName = ref(pending.value?.fullName || '')
+const childAge = ref(pending.value?.childAge ?? '')
 const parentName = ref(pending.value?.parentName || '')
 const parentPhone = ref(pending.value?.parentPhone || '')
 const parentEmail = ref(pending.value?.parentEmail || '')
@@ -63,7 +64,7 @@ function updateRoute() {
     if (ticketUrl.value) URL.revokeObjectURL(ticketUrl.value)
     ticketUrl.value = renderError.value = ''
     pending.value = ticket.value = null
-    fullName.value = parentName.value = parentPhone.value = parentEmail.value = ''
+    fullName.value = childAge.value = parentName.value = parentPhone.value = parentEmail.value = ''
     code.value = incoming
     saveCustomer()
     switchStep('link')
@@ -102,11 +103,16 @@ function prepareRegistration() {
   if (busy.value) return
   error.value = ''
   const name = fullName.value.trim().replace(/\s+/g, ' ')
+  const age = String(childAge.value).trim()
   const digits = parentPhone.value.trim().replace(/[\s().-]/g, '')
   const emailAddress = parentEmail.value.trim()
   const contactName = parentName.value.trim().replace(/\s+/g, ' ')
   if (!/\p{L}/u.test(name) || name.length > 100 || /[\u0000-\u001f\u007f]/.test(name)) {
     error.value = 'Enter the child’s name using up to 100 characters.'
+    return
+  }
+  if (!/^\d{1,3}$/.test(age) || Number(age) > 120) {
+    error.value = 'Enter the child’s age in whole years (0 to 120).'
     return
   }
   if (!/\p{L}/u.test(contactName) || contactName.length > 100 || /[\u0000-\u001f\u007f]/.test(contactName)) {
@@ -118,11 +124,11 @@ function prepareRegistration() {
     return
   }
   if (emailAddress.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)) {
-    error.value = 'Enter a valid parent’s email address.'
+    error.value = 'Enter a valid email address for the parent.'
     return
   }
   pending.value = {
-    code: code.value, fullName: name, parentName: contactName, parentPhone: digits,
+    code: code.value, fullName: name, childAge: age, parentName: contactName, parentPhone: digits,
     parentEmail: emailAddress, requestKey: requestKey(),
   }
   saveCustomer()
@@ -137,12 +143,12 @@ async function redeem() {
     const action = pending.value.parentName ? 'redeemWithParent' : pending.value.parentAddress ? 'redeemWithAddress' : 'redeem'
     ticket.value = await request(action, pending.value)
     pending.value = null
-    fullName.value = parentName.value = parentPhone.value = parentEmail.value = ''
+    fullName.value = childAge.value = parentName.value = parentPhone.value = parentEmail.value = ''
     saveCustomer()
     switchStep('ticket')
     makeTicket()
   } catch (failure) {
-    if (['INVALID_CODE', 'CODE_USED', 'INVALID_NAME', 'INVALID_PARENT_NAME', 'INVALID_PHONE', 'INVALID_EMAIL', 'INVALID_ADDRESS', 'BAD_REQUEST', 'NOT_CONFIGURED'].includes(failure.code)) {
+    if (['INVALID_CODE', 'CODE_USED', 'INVALID_NAME', 'INVALID_CHILD_AGE', 'INVALID_PARENT_NAME', 'INVALID_PHONE', 'INVALID_EMAIL', 'INVALID_ADDRESS', 'BAD_REQUEST', 'NOT_CONFIGURED'].includes(failure.code)) {
       pending.value = null
       linkRejected.value = ['INVALID_CODE', 'CODE_USED'].includes(failure.code)
       saveCustomer()
@@ -226,9 +232,10 @@ onUnmounted(() => {
           <form class="form-stack" @submit.prevent="prepareRegistration">
             <fieldset :disabled="busy" class="fields">
               <div><label for="full-name">Child’s name</label><input id="full-name" v-model="fullName" required maxlength="100" autocomplete="section-child name" /></div>
+              <div><label for="child-age">Age</label><input id="child-age" v-model="childAge" required type="text" inputmode="numeric" maxlength="3" /></div>
               <div><label for="parent-name">Parent’s name</label><input id="parent-name" v-model="parentName" required maxlength="100" autocomplete="section-parent name" /></div>
               <div><label for="parent-phone">Parent’s phone number</label><input id="parent-phone" v-model="parentPhone" required maxlength="40" type="tel" autocomplete="section-parent tel" /></div>
-              <div><label for="parent-email">Parent’s email address</label><input id="parent-email" v-model="parentEmail" required maxlength="254" type="email" autocomplete="section-parent email" /></div>
+              <div><label for="parent-email">Parent’s email</label><input id="parent-email" v-model="parentEmail" required maxlength="254" type="email" autocomplete="section-parent email" /></div>
             </fieldset>
             <p v-if="error" class="form-error" role="alert">{{ error }}</p>
             <button class="primary-button" :disabled="busy">{{ busy ? 'Registering…' : 'Complete registration' }} <span aria-hidden="true">→</span></button>

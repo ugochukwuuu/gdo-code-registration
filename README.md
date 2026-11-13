@@ -29,9 +29,9 @@ The registration page is at the root URL and the organiser dashboard is at the s
 | Tab | Columns |
 | --- | --- |
 | RegistrationCodes | Code, Status, CreatedAt, RedeemedAt, RegistrationID |
-| Registrations | RegistrationID, FullName, Phone, Email, RegistrationCode, TicketNumber, RegisteredAt, ParentAddress, ParentName, ParentPhone, ParentEmail |
+| Registrations | RegistrationID, FullName, ChildAge, Phone, Email, RegistrationCode, TicketNumber, RegisteredAt, ParentAddress, ParentName, ParentPhone, ParentEmail |
 
-To upgrade an existing deployment, update Code.gs and run setupSpreadsheet before deploying the new version. It adds the parent contact columns and preserves existing registrations and legacy addresses. Publish the updated frontend after the new Apps Script version is live.
+To upgrade an existing deployment, update Code.gs and run setupSpreadsheet before deploying the new version. It adds any missing registration columns and hides the legacy contact columns. Existing values are preserved for ticket recovery. New registrations collect the child’s name and age, and the parent’s name, phone number and email address. Publish the updated frontend after the new Apps Script version is live.
 
 The application manages both tabs. Use the dashboard or a separate copy for filtering, sorting or reporting. Avoid editing, deleting or rearranging the live rows while the app is accepting registrations.
 

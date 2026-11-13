@@ -1,8 +1,9 @@
 const CODE_HEADERS = ['Code', 'Status', 'CreatedAt', 'RedeemedAt', 'RegistrationID'];
 const REGISTRATION_HEADERS = [
   'RegistrationID', 'FullName', 'Phone', 'Email', 'RegistrationCode', 'TicketNumber', 'RegisteredAt', 'ParentAddress',
-  'ParentName', 'ParentPhone', 'ParentEmail',
+  'ParentName', 'ParentPhone', 'ParentEmail', 'ChildAge',
 ];
+const ORDERED_REGISTRATION_HEADERS = ['RegistrationID', 'FullName', 'ChildAge', ...REGISTRATION_HEADERS.slice(2, -1)];
 const SESSION_SECONDS = 3600;
 const PAGE_SIZE = 50;
 
@@ -42,7 +43,7 @@ function dispatch_(body) {
     case 'health':
       withLock_(() => limit_('public', 75, 60));
       readTables_(settings_());
-      return { service: 'gdo-code-registration', version: 3 };
+      return { service: 'gdo-code-registration', version: 5 };
     case 'verify': {
       const code = parseCode_(body.code);
       withLock_(() => limit_('public', 75, 60));
@@ -88,7 +89,7 @@ function dispatch_(body) {
 }
 
 function redeem_(settings, details) {
-  const { codes, registrations } = readTables_(settings);
+  const { codes, registrations, registrationHeaders } = readTables_(settings);
   const codeIndex = codes.findIndex(row => row[0] === details.code);
   if (codeIndex === -1) fail_('INVALID_CODE', 'This registration link is invalid.');
   const codeRow = codes[codeIndex];
@@ -100,12 +101,16 @@ function redeem_(settings, details) {
         previous[0] === registrationId && previous[1] === details.fullName &&
         (previous[2] || '') === details.phone && (previous[3] || '') === details.email &&
         (previous[7] || '') === details.parentAddress && (previous[8] || '') === details.parentName &&
-        (previous[9] || '') === details.parentPhone && (previous[10] || '') === details.parentEmail) {
+        (previous[9] || '') === details.parentPhone && (previous[10] || '') === details.parentEmail &&
+        (previous[11] || '') === details.childAge) {
       return ticket_(previous);
     }
     fail_('CODE_USED', 'This registration link has already been used.');
   }
   if (codeRow[1] !== 'Unused') throw new Error('Invalid code status.');
+  if (details.parentName && details.childAge === '') {
+    fail_('INVALID_CHILD_AGE', 'Enter the child’s age in whole years (0 to 120).');
+  }
   if (!details.parentName && !details.parentAddress) fail_('INVALID_ADDRESS', 'Enter the parent’s address.');
 
   const highestNumber = registrations.reduce((highest, row) => {
@@ -117,12 +122,13 @@ function redeem_(settings, details) {
   const now = new Date().toISOString();
   const registration = [
     registrationId, details.fullName, details.phone, details.email, details.code, ticketNumber, now, details.parentAddress,
-    details.parentName, details.parentPhone, details.parentEmail,
+    details.parentName, details.parentPhone, details.parentEmail, details.childAge,
   ];
+  const sheetRow = registrationHeaders.map(header => registration[REGISTRATION_HEADERS.indexOf(header)]);
   const ids = sheetIds_(settings);
   Sheets.Spreadsheets.batchUpdate({
     requests: [
-      { appendCells: { sheetId: ids.Registrations, rows: [cells_(registration)], fields: 'userEnteredValue' } },
+      { appendCells: { sheetId: ids.Registrations, rows: [cells_(sheetRow)], fields: 'userEnteredValue' } },
       { updateCells: {
         start: { sheetId: ids.RegistrationCodes, rowIndex: codeIndex + 1, columnIndex: 1 },
         rows: [cells_(['Used', codeRow[2], now, registrationId])],
@@ -171,7 +177,7 @@ function dashboard_(settings, body) {
     page, pages,
     items: attendees ? items.map(row => ({
       fullName: row[1], phone: row[2], email: row[3] || '', code: row[4], ticketNumber: row[5], registeredAt: row[6],
-      parentAddress: row[7] || '', parentName: row[8] || '', parentPhone: row[9] || '', parentEmail: row[10] || '',
+      parentAddress: row[7] || '', parentName: row[8] || '', parentPhone: row[9] || '', parentEmail: row[10] || '', childAge: row[11] ?? '',
     })) : items.map(row => ({ code: row[0], status: row[1], createdAt: row[2], redeemedAt: row[3] || '' })),
   };
 }
@@ -231,13 +237,22 @@ function settings_() {
 }
 
 function readTables_(settings, includeRegistrations = true) {
-  const ranges = includeRegistrations ? ['RegistrationCodes!A:E', 'Registrations!A:K'] : ['RegistrationCodes!A:E'];
+  const ranges = includeRegistrations ? ['RegistrationCodes!A:E', 'Registrations!A:L'] : ['RegistrationCodes!A:E'];
   const { valueRanges } = Sheets.Spreadsheets.Values.batchGet(settings.spreadsheetId, {
     ranges, valueRenderOption: 'UNFORMATTED_VALUE',
   });
   const codes = tableRows_(valueRanges[0].values, CODE_HEADERS);
-  const registrations = includeRegistrations ? tableRows_(valueRanges[1].values, REGISTRATION_HEADERS) : [];
-  return { codes, registrations };
+  if (!includeRegistrations) return { codes };
+  const values = valueRanges[1].values;
+  const registrationHeaders = values?.[0]?.map(value => String(value).trim());
+  if (!registrationHeaders || registrationHeaders.length !== REGISTRATION_HEADERS.length ||
+      new Set(registrationHeaders).size !== REGISTRATION_HEADERS.length ||
+      !registrationHeaders.every(header => REGISTRATION_HEADERS.includes(header))) {
+    throw new Error('Unexpected worksheet headers. Run setupSpreadsheet.');
+  }
+  const positions = REGISTRATION_HEADERS.map(header => registrationHeaders.indexOf(header));
+  const registrations = values.slice(1).map(row => positions.map(position => row[position]));
+  return { codes, registrations, registrationHeaders };
 }
 
 function tableRows_(values, headers) {
@@ -270,30 +285,55 @@ function setupSpreadsheet() {
   const settings = settings_();
   withLock_(() => {
     const book = SpreadsheetApp.openById(settings.spreadsheetId);
-    const schemas = { RegistrationCodes: CODE_HEADERS, Registrations: REGISTRATION_HEADERS };
-    Object.entries(schemas).forEach(([name, headers]) => {
-      const sheet = book.getSheetByName(name) || book.insertSheet(name);
-      const header = sheet.getRange(1, 1, 1, headers.length);
-      if (sheet.getLastRow() === 0) {
-        header.setValues([headers]).setFontWeight('bold');
-        sheet.setFrozenRows(1);
-        return;
-      }
-      const current = header.getValues()[0];
-      const previousWidth = sheet.getLastColumn();
-      if (name === 'Registrations' && [7, 8].includes(previousWidth) &&
-          JSON.stringify(current.slice(0, previousWidth)) === JSON.stringify(headers.slice(0, previousWidth))) {
-        const added = headers.slice(previousWidth);
-        sheet.getRange(1, previousWidth + 1, 1, added.length).setValues([added]).setFontWeight('bold');
-      } else if (JSON.stringify(current) !== JSON.stringify(headers)) {
-        throw new Error('Unexpected headers in ' + name + '. Setup did not overwrite existing data.');
-      }
-    });
+    const codes = book.getSheetByName('RegistrationCodes') || book.insertSheet('RegistrationCodes');
+    const codeHeader = codes.getRange(1, 1, 1, CODE_HEADERS.length);
+    if (codes.getLastRow() === 0) {
+      codeHeader.setValues([CODE_HEADERS]).setFontWeight('bold');
+      codes.setFrozenRows(1);
+    } else {
+      tableRows_(codeHeader.getValues(), CODE_HEADERS);
+    }
+    const sheet = book.getSheetByName('Registrations') || book.insertSheet('Registrations');
+    setupRegistrationColumns_(sheet);
     SpreadsheetApp.flush();
     CacheService.getScriptCache().remove('sheet-ids:' + settings.spreadsheetId);
     readTables_(settings);
     sheetIds_(settings);
   });
+}
+
+function setupRegistrationColumns_(sheet) {
+  const headers = ORDERED_REGISTRATION_HEADERS;
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  } else {
+    const width = sheet.getLastColumn();
+    const current = sheet.getRange(1, 1, 1, width).getValues()[0].map(value => String(value).trim());
+    const known = current.filter(Boolean);
+    const required = REGISTRATION_HEADERS.slice(0, 7);
+    if (new Set(known).size !== known.length || !known.every(header => headers.includes(header)) ||
+        !required.every(header => known.includes(header)) || known.length !== width) {
+      throw new Error('Unexpected headers in Registrations. Check row 1 for renamed, duplicate or blank headers. Existing data was preserved.');
+    }
+    const missing = headers.filter(header => !current.includes(header));
+    if (missing.length) {
+      sheet.getRange(1, width + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
+      current.push(...missing);
+    }
+    headers.forEach((header, index) => {
+      const from = current.indexOf(header);
+      if (from === index) return;
+      sheet.moveColumns(sheet.getRange(1, from + 1), index + 1);
+      current.splice(from, 1);
+      current.splice(index, 0, header);
+    });
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  sheet.showColumns(2, 2);
+  sheet.hideColumns(4, 2);
+  sheet.hideColumns(9);
+  sheet.showColumns(10, 3);
 }
 
 function parseCode_(value) {
@@ -337,9 +377,14 @@ function parseRegistration_(body) {
     fail_('INVALID_ADDRESS', 'Enter a parent’s address of up to 250 characters.');
   }
   if (withParent) {
-    return { code, requestKey, fullName, parentName, parentPhone: phone, parentEmail: email, phone: '', email: '', parentAddress: '' };
+    const rawAge = body.childAge ?? '';
+    if (rawAge !== '' && (typeof rawAge !== 'string' || !/^\d{1,3}$/.test(rawAge) || Number(rawAge) > 120)) {
+      fail_('INVALID_CHILD_AGE', 'Enter the child’s age in whole years (0 to 120).');
+    }
+    const childAge = rawAge === '' ? '' : String(Number(rawAge));
+    return { code, requestKey, fullName, childAge, parentName, parentPhone: phone, parentEmail: email, phone: '', email: '', parentAddress: '' };
   }
-  return { code, requestKey, fullName, phone, email, parentAddress, parentName: '', parentPhone: '', parentEmail: '' };
+  return { code, requestKey, fullName, phone, email, parentAddress, childAge: '', parentName: '', parentPhone: '', parentEmail: '' };
 }
 
 function ticket_(row) {
